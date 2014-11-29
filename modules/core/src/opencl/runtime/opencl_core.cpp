@@ -125,7 +125,7 @@ static void* WinGetProcAddress(const char* name)
 #define CV_CL_GET_PROC_ADDRESS(name) WinGetProcAddress(name)
 #endif // _WIN32
 
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__ANDROID__)
 #include <dlfcn.h>
 #include <stdio.h>
 
@@ -160,6 +160,55 @@ static void* GetProcAddress(const char* name)
 }
 #define CV_CL_GET_PROC_ADDRESS(name) GetProcAddress(name)
 #endif
+
+#if defined(__ANDROID__)
+    #include <dlfcn.h>
+    #include <sys/stat.h>
+
+#if defined(__ARM_ARCH_8A__) || defined(_X64_)
+    static const char *default_so_paths[] = {
+                                            "/system/lib64/libOpenCL.so",
+                                            "/system/vendor/lib64/libOpenCL.so",
+                                            "/system/vendor/lib64/egl/libGLES_mali.so"
+                                          };
+#else
+    static const char *default_so_paths[] = {
+                                            "/system/lib/libOpenCL.so",
+                                            "/system/vendor/lib/libOpenCL.so",
+                                            "/system/vendor/lib/egl/libGLES_mali.so"
+                                          };
+#endif
+
+    static int access_file(const char *filename)
+    {
+        struct stat buffer;
+        return (stat(filename, &buffer) == 0);
+    }
+
+    static void* GetProcAddress (const char* name)
+    {
+        static void* h = NULL;
+        unsigned int i;
+        if (!h)
+        {
+            const char* name;
+            for(i=0; i<(sizeof(default_so_paths)/sizeof(char*)); i++)
+            {
+                if(access_file(default_so_paths[i])) {
+                    name = (char *)default_so_paths[i];
+                    h = dlopen(name, RTLD_LAZY);
+                    if (h) break;
+                }
+            }
+            if (!h)
+                return NULL;
+        }
+
+        return dlsym(h, name);
+    }
+    #define CV_CL_GET_PROC_ADDRESS(name) GetProcAddress(name)
+#endif
+
 
 #ifndef CV_CL_GET_PROC_ADDRESS
 #ifdef __GNUC__
